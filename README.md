@@ -96,17 +96,22 @@ directory. There is no installer.
      step 3.
 2. Extract the archive wherever you like.
 3. Make sure the final folder is named exactly `SquadronsTelemetry`
-   and contains `squadrons_telemetry.py` at its top level. EDMC uses
-   the folder name to identify the plugin; any name would technically
-   work, but these docs and log lines assume `SquadronsTelemetry`.
+   and contains both `load.py` (EDMC's entrypoint) and
+   `squadrons_telemetry.py` (the implementation) at its top level.
+   EDMC uses the folder name to identify the plugin; any name would
+   technically work, but these docs and log lines assume
+   `SquadronsTelemetry`.
 4. Move that `SquadronsTelemetry` folder into EDMC's plugin directory:
    - **Windows:** `%LOCALAPPDATA%\EDMarketConnector\plugins`
    - **macOS:** `~/Library/Application Support/EDMarketConnector/plugins`
    - **Linux:** `~/.local/share/EDMarketConnector/plugins`
-5. The final path should look like
+5. The final paths should look like
+   `…/EDMarketConnector/plugins/SquadronsTelemetry/load.py` and
    `…/EDMarketConnector/plugins/SquadronsTelemetry/squadrons_telemetry.py`.
 6. Restart EDMC. The plugin appears in
-   **File → Settings → Plugins** as **Squadrons Telemetry**.
+   **File → Settings → Plugins** as **Squadrons Telemetry**, and a
+   dedicated **Squadrons Telemetry** settings tab appears alongside
+   the other plugin tabs in **File → Settings**.
 
 ### Updating
 

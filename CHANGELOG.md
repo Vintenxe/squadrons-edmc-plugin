@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or trailing spaces no longer produce a broken URL.
 
 ### Fixed
+- EDMC compatibility: added a `load.py` entrypoint at the plugin root
+  that re-exports the EDMC hook functions from `squadrons_telemetry`.
+  Without this file, EDMC marks the plugin as broken on startup, and
+  even when the module loads it cannot discover `plugin_prefs` /
+  `prefs_changed`, so no **Squadrons Telemetry** settings tab appears
+  in **File → Settings**. With `load.py` in place, the plugin loads
+  cleanly and its settings tab is exposed.
 - A revoked or invalid token (HTTP `401`) no longer causes the event buffer
   to retry the same batch indefinitely. The batch is dropped and a clear
   message is written to the EDMC log.
