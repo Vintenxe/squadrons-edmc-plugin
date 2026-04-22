@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A revoked or invalid token (HTTP `401`) no longer causes the event buffer
   to retry the same batch indefinitely. The batch is dropped and a clear
   message is written to the EDMC log.
+- HTTP `403 Forbidden` is now handled the same way as `401`: the batch is
+  dropped and the log asks the user to review / recreate / re-authorize
+  the telemetry client in the Squadrons web app.
 - HTTP `426 Upgrade Required` responses are now handled explicitly: the
   batch is dropped and the log explains that a newer plugin version is
   required.

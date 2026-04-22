@@ -247,15 +247,23 @@ def _flush_buffer() -> None:
                 f"{result.get('skipped', 0)} skipped"
             )
     except urllib.error.HTTPError as e:
-        # 401: token revoked or invalid. Do not keep retrying — drop
-        # this batch so we don't pin the buffer forever on a dead token.
+        # 401 / 403: token is rejected or the client is no longer
+        # authorized (revoked, disabled, or stripped of its squadron
+        # membership). Do not keep retrying — drop this batch so we
+        # don't pin the buffer forever on a dead credential.
         # 426: plugin version is below the server's minimum. Same
         # reasoning: retrying won't help until the user updates.
-        if e.code in (401, 426):
+        if e.code in (401, 403, 426):
             reason = {
                 401: (
                     "token rejected (401). Revoke and recreate the client "
                     "in the Squadrons web app, then update the plugin."
+                ),
+                403: (
+                    "client no longer authorized (403). Re-check the "
+                    "telemetry client in the Squadrons web app "
+                    "(Settings → Telemetry Clients) and recreate or "
+                    "re-authorize it, then update the plugin."
                 ),
                 426: (
                     "plugin version rejected (426 Upgrade Required). "

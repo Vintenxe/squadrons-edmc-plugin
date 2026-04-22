@@ -176,11 +176,15 @@ Precedence is set by the server and is not configurable per client.
 - Check EDMC's log via **Help → Open Log Folder** and look for lines
   from `Squadrons Telemetry`.
 
-**`401 Unauthorized` in the EDMC log**
-- The token was revoked (visible in **Settings → Telemetry Clients** in
-  the web app), or was mistyped. The plugin drops the current batch on
-  `401` — it does not keep retrying a revoked token. Re-paste a freshly
-  created client token and restart EDMC.
+**`401 Unauthorized` or `403 Forbidden` in the EDMC log**
+- `401`: the token was revoked (visible in **Settings → Telemetry
+  Clients** in the web app), or was mistyped.
+- `403`: the client is no longer authorized — e.g. it was disabled, or
+  your squadron membership changed.
+- In both cases the plugin drops the current batch and does not keep
+  retrying a dead credential. Re-check the client in the Squadrons web
+  app, recreate or re-authorize it, paste the new token into the plugin
+  settings, and restart EDMC.
 
 **`426 Upgrade Required` in the EDMC log**
 - Your plugin version is below the server's minimum. Download the
