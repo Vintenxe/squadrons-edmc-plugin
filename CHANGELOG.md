@@ -24,6 +24,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prefs_changed`, so no **Squadrons Telemetry** settings tab appears
   in **File → Settings**. With `load.py` in place, the plugin loads
   cleanly and its settings tab is exposed.
+- Settings tab construction: switched the editable fields in
+  `plugin_prefs` from `nb.Entry` (which does not exist in EDMC's
+  `myNotebook`) to `ttk.Entry`, while keeping `nb.Frame` / `nb.Label`
+  for theming. Without this, EDMC raised
+  `AttributeError: module 'myNotebook' has no attribute 'Entry'`
+  while building the settings tab and the tab did not render.
 - A revoked or invalid token (HTTP `401`) no longer causes the event buffer
   to retry the same batch indefinitely. The batch is dropped and a clear
   message is written to the EDMC log.
