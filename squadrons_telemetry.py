@@ -37,7 +37,7 @@ import threading
 from typing import Any, Dict, List, Optional
 
 import tkinter as tk
-from tkinter import ttk  # noqa: F401  (kept for plugins that subclass)
+from tkinter import ttk
 import urllib.error
 import urllib.request
 
@@ -129,13 +129,13 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> nb.Frame:
     this._url_var = tk.StringVar(
         value=this.server_url or this.default_server_url
     )
-    nb.Entry(frame, textvariable=this._url_var, width=50).grid(
+    ttk.Entry(frame, textvariable=this._url_var, width=50).grid(
         row=1, column=1, sticky=tk.W
     )
 
     nb.Label(frame, text="API Token:").grid(row=2, column=0, sticky=tk.W)
     this._token_var = tk.StringVar(value=this.api_token)
-    nb.Entry(frame, textvariable=this._token_var, width=50, show="*").grid(
+    ttk.Entry(frame, textvariable=this._token_var, width=50, show="*").grid(
         row=2, column=1, sticky=tk.W
     )
 
