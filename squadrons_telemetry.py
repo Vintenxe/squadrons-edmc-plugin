@@ -20,6 +20,8 @@ Install:
     Drop this folder into EDMC's plugins directory, e.g.
     %LOCALAPPDATA%\\EDMarketConnector\\plugins\\SquadronsTelemetry\\
     (equivalents on macOS / Linux are documented in README.md).
+    EDMC loads the plugin via the sibling ``load.py`` entrypoint, which
+    re-exports the hook functions defined in this module.
 
 Configure:
     EDMC → File → Settings → Squadrons Telemetry
