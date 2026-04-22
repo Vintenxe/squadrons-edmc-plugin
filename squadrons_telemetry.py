@@ -49,7 +49,7 @@ import myNotebook as nb  # type: ignore[import-not-found]
 # EDMC plugin API requires these at module level
 this = sys.modules[__name__]
 this.plugin_name = "Squadrons Telemetry"
-this.version = "1.1.1"
+this.version = "1.1.2"
 this.default_server_url = "https://elitesquadrons.com"
 this.server_url = ""
 this.api_token = ""
@@ -97,6 +97,12 @@ BUFFER_MAX_SIZE = 30
 # Cap on locally buffered events across retries, to prevent unbounded
 # growth if the server is unreachable for a long time.
 BUFFER_RETRY_CAP = 100
+# Server matches this as its per-batch byte ceiling (512 KB). We flush early
+# if the serialised batch approaches this so we never ship a 413.
+BUFFER_MAX_BYTES = 480 * 1024
+# On transient failures (network / 5xx / 429), wait at least this long before
+# the next flush attempt so we don't hammer a recovering server.
+RETRY_BACKOFF_SECONDS = 30
 
 
 def plugin_start3(plugin_dir: str) -> str:
@@ -190,9 +196,22 @@ def journal_entry(
     with this.buffer_lock:
         this.event_buffer.append(entry)
 
+        # Byte-size tripwire: if the serialised buffer is close to the
+        # server's per-batch ceiling, flush now instead of waiting for the
+        # timer or the count-based cap.  Cheap to compute — one JSON dump
+        # on the slow path.
+        oversized = False
+        try:
+            oversized = len(
+                json.dumps({"cmdrName": this.cmdr_name, "events": this.event_buffer})
+            ) >= BUFFER_MAX_BYTES
+        except (TypeError, ValueError):
+            oversized = False
+
         if (
             event in IMMEDIATE_FLUSH_EVENTS
             or len(this.event_buffer) >= BUFFER_MAX_SIZE
+            or oversized
         ):
             _schedule_flush(immediate=True)
         else:
@@ -201,10 +220,22 @@ def journal_entry(
     return None
 
 
-def _schedule_flush(immediate: bool = False) -> None:
-    """Schedule a buffer flush."""
+def _schedule_flush(
+    immediate: bool = False,
+    delay_override: Optional[float] = None,
+) -> None:
+    """Schedule a buffer flush.
+
+    ``delay_override`` lets the retry path back off on transient server
+    failures so the next attempt doesn't run in the 10-second window.
+    """
     _cancel_flush_timer()
-    delay = 0.1 if immediate else BUFFER_FLUSH_INTERVAL
+    if delay_override is not None:
+        delay = delay_override
+    elif immediate:
+        delay = 0.1
+    else:
+        delay = BUFFER_FLUSH_INTERVAL
     this.flush_timer = threading.Timer(delay, _flush_buffer)
     this.flush_timer.daemon = True
     this.flush_timer.start()
@@ -260,9 +291,12 @@ def _flush_buffer() -> None:
         # authorized (revoked, disabled, or stripped of its squadron
         # membership). Do not keep retrying — drop this batch so we
         # don't pin the buffer forever on a dead credential.
+        # 413: payload too large. The new byte-size tripwire above
+        # should prevent this in practice; if we still hit it, drop
+        # the batch rather than ship it again.
         # 426: plugin version is below the server's minimum. Same
         # reasoning: retrying won't help until the user updates.
-        if e.code in (401, 403, 426):
+        if e.code in (401, 403, 413, 426):
             reason = {
                 401: (
                     "token rejected (401). Revoke and recreate the client "
@@ -274,6 +308,10 @@ def _flush_buffer() -> None:
                     "(Settings → Telemetry Clients) and recreate or "
                     "re-authorize it, then update the plugin."
                 ),
+                413: (
+                    "payload rejected (413 Payload Too Large). The batch "
+                    "was dropped; subsequent flushes will be smaller."
+                ),
                 426: (
                     "plugin version rejected (426 Upgrade Required). "
                     "Download the latest release from "
@@ -284,15 +322,21 @@ def _flush_buffer() -> None:
                 f"Telemetry send failed and batch dropped: {reason}"
             )
             return
+        # 429 / 5xx and other HTTP errors: rebuffer and back off so a
+        # recovering server isn't hammered by an immediate re-flush timer.
         this.logger.error(
-            f"Telemetry send failed (HTTP {e.code}); will retry on next flush"
+            f"Telemetry send failed (HTTP {e.code}); will retry in "
+            f"{RETRY_BACKOFF_SECONDS}s"
         )
         _rebuffer(events)
+        _schedule_flush(delay_override=RETRY_BACKOFF_SECONDS)
     except Exception as e:
         this.logger.error(
-            f"Telemetry send failed ({e}); will retry on next flush"
+            f"Telemetry send failed ({e}); will retry in "
+            f"{RETRY_BACKOFF_SECONDS}s"
         )
         _rebuffer(events)
+        _schedule_flush(delay_override=RETRY_BACKOFF_SECONDS)
 
 
 def _rebuffer(events: List[Dict[str, Any]]) -> None:

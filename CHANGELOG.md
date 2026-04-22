@@ -6,6 +6,23 @@ this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] - 2026-04-22
+
+### Changed
+- Flush now trips on a byte-size threshold (≈480 KB) in addition to the
+  count and immediate-flush rules, so the plugin never ships a batch that
+  the server will reject with HTTP 413.
+- Transient failures (network errors, HTTP 429, 5xx) rebuffer and back off
+  for 30 seconds before retrying so a recovering server is not hammered
+  by the 10-second flush loop.
+- HTTP 413 from the server now drops the offending batch (rather than
+  retrying indefinitely) and logs a clear reason.
+
+### Compatibility
+- Server version from 2026-04-22 reports per-client health counters
+  (accepted / rejected / last error code). No plugin change required to
+  benefit — just update to pick up the client-side hardening above.
+
 ## [1.1.1] - 2026-04-22
 
 ### Changed
