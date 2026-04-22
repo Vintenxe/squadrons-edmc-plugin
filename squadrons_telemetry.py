@@ -41,6 +41,11 @@ from tkinter import ttk  # noqa: F401  (kept for plugins that subclass)
 import urllib.error
 import urllib.request
 
+# EDMC's theme-aware widget wrappers. Settings tabs must use these so the
+# host's light/dark theme engine applies; raw tk widgets parented to
+# EDMC's settings Notebook render incorrectly on some platforms.
+import myNotebook as nb  # type: ignore[import-not-found]
+
 # EDMC plugin API requires these at module level
 this = sys.modules[__name__]
 this.plugin_name = "Squadrons Telemetry"
@@ -108,44 +113,46 @@ def plugin_stop() -> None:
     this.logger.info("Squadrons Telemetry stopped")
 
 
-def plugin_prefs(parent: tk.Tk, cmdr: str, is_beta: bool) -> Optional[tk.Frame]:
-    """Called by EDMC to build the settings UI."""
-    frame = tk.Frame(parent)
+def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> nb.Frame:
+    """Called by EDMC to build the settings UI.
 
-    tk.Label(frame, text="Squadrons Telemetry Settings").grid(
+    Must use ``myNotebook`` widgets and return an ``nb.Frame`` so EDMC can
+    theme the tab and mount it into the settings Notebook.
+    """
+    frame = nb.Frame(parent)
+
+    nb.Label(frame, text="Squadrons Telemetry Settings").grid(
         row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10)
     )
 
-    tk.Label(frame, text="Server URL:").grid(row=1, column=0, sticky=tk.W)
+    nb.Label(frame, text="Server URL:").grid(row=1, column=0, sticky=tk.W)
     this._url_var = tk.StringVar(
         value=this.server_url or this.default_server_url
     )
-    tk.Entry(frame, textvariable=this._url_var, width=50).grid(
+    nb.Entry(frame, textvariable=this._url_var, width=50).grid(
         row=1, column=1, sticky=tk.W
     )
 
-    tk.Label(frame, text="API Token:").grid(row=2, column=0, sticky=tk.W)
+    nb.Label(frame, text="API Token:").grid(row=2, column=0, sticky=tk.W)
     this._token_var = tk.StringVar(value=this.api_token)
-    tk.Entry(frame, textvariable=this._token_var, width=50, show="*").grid(
+    nb.Entry(frame, textvariable=this._token_var, width=50, show="*").grid(
         row=2, column=1, sticky=tk.W
     )
 
-    tk.Label(
+    nb.Label(
         frame,
         text=(
             "Generate a token at "
             "https://elitesquadrons.com/settings → Telemetry Clients "
             "(or the equivalent path on your squadron's instance)."
         ),
-        fg="gray",
         wraplength=400,
         justify=tk.LEFT,
     ).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
 
-    tk.Label(
+    nb.Label(
         frame,
         text=f"Plugin version: {this.version}",
-        fg="gray",
     ).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
 
     return frame
