@@ -32,6 +32,13 @@ events listed below.
   prices, modules for sale, and ships for sale at the station you're
   docked at. Listings are replaced on each visit, not appended.
 
+These snapshots are populated by EDMC from the `Market.json`,
+`Outfitting.json`, and `Shipyard.json` files that Elite Dangerous writes
+into its journal folder each time you dock. EDMC must be running at the
+moment you dock for those files to be picked up and forwarded. **No
+separate Frontier-account link in EDMC is required** for this plugin to
+send these events — the plugin reads what EDMC already sees.
+
 ### Fleet carriers (full lifecycle)
 - `CarrierJump`, `CarrierJumpRequest`, `CarrierJumpCancelled`,
   `CarrierLocation` — schedule, cancel, complete, and reconcile carrier
@@ -75,23 +82,30 @@ zone tracking, or operation auto-tagging. Those are not part of v1.x.
 EDMC plugins are loose Python folders dropped into EDMC's plugin
 directory. There is no installer.
 
-1. Download the latest release:
-   - Go to the
+1. Download the plugin. Two paths, pick whichever is available:
+   - **Preferred — packaged release.** Open the
      [Releases page](https://github.com/Vintenxe/squadrons-edmc-plugin/releases)
-     and grab the `SquadronsTelemetry-vX.Y.Z.zip` asset from the most
-     recent release.
-   - Or, if you prefer, download the repository itself as a ZIP via
-     **Code → Download ZIP** on the GitHub page. You'll need to rename
-     the extracted folder to `SquadronsTelemetry`.
-2. Extract the archive. You should end up with a folder called
-   `SquadronsTelemetry` that contains `squadrons_telemetry.py`.
-3. Move that `SquadronsTelemetry` folder into EDMC's plugin directory:
+     and download the `SquadronsTelemetry-vX.Y.Z.zip` asset attached to
+     the latest release. This archive is packaged to extract cleanly
+     into a `SquadronsTelemetry/` folder.
+   - **Fallback — repository ZIP.** On the repository page, choose
+     **Code → Download ZIP**. GitHub will give you an archive whose
+     top-level folder is named after the repo/branch
+     (e.g. `squadrons-edmc-plugin-main/`). This works too, but you
+     will need to rename that folder to `SquadronsTelemetry` in
+     step 3.
+2. Extract the archive wherever you like.
+3. Make sure the final folder is named exactly `SquadronsTelemetry`
+   and contains `squadrons_telemetry.py` at its top level. EDMC uses
+   the folder name to identify the plugin; any name would technically
+   work, but these docs and log lines assume `SquadronsTelemetry`.
+4. Move that `SquadronsTelemetry` folder into EDMC's plugin directory:
    - **Windows:** `%LOCALAPPDATA%\EDMarketConnector\plugins`
    - **macOS:** `~/Library/Application Support/EDMarketConnector/plugins`
    - **Linux:** `~/.local/share/EDMarketConnector/plugins`
-4. The final path should look like
+5. The final path should look like
    `…/EDMarketConnector/plugins/SquadronsTelemetry/squadrons_telemetry.py`.
-5. Restart EDMC. The plugin appears in
+6. Restart EDMC. The plugin appears in
    **File → Settings → Plugins** as **Squadrons Telemetry**.
 
 ### Updating
@@ -227,6 +241,14 @@ asks you to upgrade when that happens.
   Other squadrons cannot see your data.
 - Tokens are stored hashed (SHA-256) on the server. Only the prefix is
   visible afterwards.
+- Your configured server URL and token are stored locally in
+  `<plugin folder>/config.json` in plain text — i.e.
+  `…/EDMarketConnector/plugins/SquadronsTelemetry/config.json`.
+  Treat that file the way you would treat a saved password: don't
+  share the plugin folder or its contents while a token is configured.
+  If you need to share logs or hand the folder to someone, revoke the
+  token first from the Squadrons web app and create a new one
+  afterwards.
 - You can revoke a token at any time from the Squadrons web app.
 
 See [SECURITY.md](SECURITY.md) if you need to report a security issue.

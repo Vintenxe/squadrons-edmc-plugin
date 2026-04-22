@@ -151,7 +151,7 @@ def plugin_prefs(parent: tk.Tk, cmdr: str, is_beta: bool) -> Optional[tk.Frame]:
 
 def prefs_changed(cmdr: str, is_beta: bool) -> None:
     """Called by EDMC when settings are saved."""
-    this.server_url = this._url_var.get().rstrip("/")
+    this.server_url = this._url_var.get().strip().rstrip("/")
     this.api_token = this._token_var.get().strip()
     _save_config()
     this.logger.info(f"Settings updated: server={this.server_url}")

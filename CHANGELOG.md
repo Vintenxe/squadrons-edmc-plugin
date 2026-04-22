@@ -12,6 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Server URL now defaults to `https://elitesquadrons.com` on first run.
 - Settings UI now points at the real token-management page instead of a
   placeholder URL.
+- Server URL entered in settings is now whitespace-trimmed in addition
+  to having a trailing slash stripped, so accidentally pasted leading
+  or trailing spaces no longer produce a broken URL.
 
 ### Fixed
 - A revoked or invalid token (HTTP `401`) no longer causes the event buffer
