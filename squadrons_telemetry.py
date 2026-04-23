@@ -15,6 +15,10 @@ Supported events:
         CarrierTradeOrder, CarrierNameChanged,
         CarrierDockingPermission, CarrierCrewServices,
         CarrierDecommission, CarrierCancelDecommission
+    - Commander stats (balance, loan, current ship, ranks, superpower
+      reputation, powerplay, owned ships):
+        LoadGame, Rank, Progress, Reputation, Loadout, SuitLoadout,
+        Powerplay, StoredShips
 
 Install:
     Drop this folder into EDMC's plugins directory, e.g.
@@ -49,7 +53,7 @@ import myNotebook as nb  # type: ignore[import-not-found]
 # EDMC plugin API requires these at module level
 this = sys.modules[__name__]
 this.plugin_name = "Squadrons Telemetry"
-this.version = "1.1.2"
+this.version = "1.2.0"
 this.default_server_url = "https://elitesquadrons.com"
 this.server_url = ""
 this.api_token = ""
@@ -79,7 +83,28 @@ CARRIER_EVENTS = {
     "CarrierCancelDecommission",
     "CarrierCrewServices",
 }
-ALL_EVENTS = BGS_EVENTS | STATION_EVENTS | MARKET_EVENTS | CARRIER_EVENTS
+# Commander-stats events feed the per-member commander profile on the
+# Squadrons web app (balance, ranks, current ship, owned ships, etc.).
+# They are attributed to the authenticated member identity on the server;
+# a legacy global-token configuration cannot ingest them because the data
+# is intrinsically per-member.
+COMMANDER_EVENTS = {
+    "LoadGame",
+    "Rank",
+    "Progress",
+    "Reputation",
+    "Loadout",
+    "SuitLoadout",
+    "Powerplay",
+    "StoredShips",
+}
+ALL_EVENTS = (
+    BGS_EVENTS
+    | STATION_EVENTS
+    | MARKET_EVENTS
+    | CARRIER_EVENTS
+    | COMMANDER_EVENTS
+)
 
 # Carrier-lifecycle events that should skip the buffer window and flush
 # immediately. Jump intent / cancellation / arrival are short-fused; the
