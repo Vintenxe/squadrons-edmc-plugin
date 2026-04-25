@@ -19,6 +19,9 @@ Supported events:
       reputation, powerplay, owned ships):
         LoadGame, Rank, Progress, Reputation, Loadout, SuitLoadout,
         Powerplay, StoredShips
+    - Community Goals (game-wide initiatives + this commander's
+      contribution snapshot):
+        CommunityGoal
 
 Install:
     Drop this folder into EDMC's plugins directory, e.g.
@@ -53,7 +56,7 @@ import myNotebook as nb  # type: ignore[import-not-found]
 # EDMC plugin API requires these at module level
 this = sys.modules[__name__]
 this.plugin_name = "Squadrons Telemetry"
-this.version = "1.2.0"
+this.version = "1.3.0"
 this.default_server_url = "https://elitesquadrons.com"
 this.server_url = ""
 this.api_token = ""
@@ -98,12 +101,19 @@ COMMANDER_EVENTS = {
     "Powerplay",
     "StoredShips",
 }
+# CommunityGoal is the journal event that snapshots every CG the commander
+# is currently subscribed to (CurrentGoals[]).  It carries both global
+# state (CurrentTotal, NumContributors, TopTier, ...) and the commander's
+# personal contribution (PlayerContribution, PlayerPercentileBand, ...) —
+# the server uses the authenticated identity to attribute the contribution.
+COMMUNITY_GOAL_EVENTS = {"CommunityGoal"}
 ALL_EVENTS = (
     BGS_EVENTS
     | STATION_EVENTS
     | MARKET_EVENTS
     | CARRIER_EVENTS
     | COMMANDER_EVENTS
+    | COMMUNITY_GOAL_EVENTS
 )
 
 # Carrier-lifecycle events that should skip the buffer window and flush

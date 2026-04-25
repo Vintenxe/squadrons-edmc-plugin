@@ -6,39 +6,20 @@ this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.0] - 2026-04-23
+## [1.3.0] - 2026-04-25
 
 ### Added
-- Commander-profile telemetry support for the following EDMC/Elite journal
-  events:
-  - `LoadGame`
-  - `Rank`
-  - `Progress`
-  - `Reputation`
-  - `Loadout`
-  - `SuitLoadout`
-  - `Powerplay`
-  - `StoredShips`
-- Forwarding of commander/account data needed to populate Squadrons member
-  profile stats, including:
-  - credits / loan
-  - pilot and superpower ranks / progress
-  - reputation / Powerplay state
-  - current ship and suit
-  - stored ships and their locations
-
-### Changed
-- Plugin version bumped to `1.2.0`.
-- The plugin’s telemetry surface now extends beyond movement, station, and
-  carrier events to include a bounded set of commander-profile events for
-  richer member pages in Squadrons.
+- Forward `CommunityGoal` journal events. The Squadrons server uses these
+  to populate the new Community Goals dashboard with both game-wide
+  initiative state (target/tier/expiry/contributors) and per-commander
+  contribution snapshots. Member contribution is attributed to the
+  authenticated telemetry client; the legacy global key updates global
+  state only.
 
 ### Compatibility
-- Squadrons server builds with commander-profile support can ingest these
-  new events into member profile views.
-- Existing `1.1.2` clients remain compatible with current Squadrons
-  telemetry ingest, but they do not emit commander-profile events and
-  therefore will not populate the new commander-stats features.
+- Requires server build from 2026-04-25 or later. Earlier server builds
+  ignore the unknown event type with no failure mode (counted as
+  `skipped`), so it is safe to update the plugin first.
 
 ## [1.1.2] - 2026-04-22
 
