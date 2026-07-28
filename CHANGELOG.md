@@ -6,6 +6,43 @@ this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-07-25
+
+### Security
+- Telemetry sends now REFUSE every HTTP redirect (301/302/303/307/308,
+  same-origin included) via a dedicated opener (`telemetry_transport.py`).
+  Previously urllib's default redirect handling would re-send the request
+  — bearer token included — to whatever `Location` the server returned,
+  so a compromised or misconfigured endpoint could exfiltrate the token
+  to another host. A redirect now drops the batch with a clear
+  configuration error naming only the redirect target's hostname; it is
+  never retried in a loop.
+
+### Release note
+- The hardened plugin (1.3.1 URL policy + 1.3.2 redirect refusal) exists
+  in the main Elite-Squadrons repository only until a maintainer syncs
+  `edmc-plugin/` into the standalone `Vintenxe/squadrons-edmc-plugin`
+  repository and publishes a release. Until that release is published,
+  the publicly downloadable plugin does NOT contain these fixes.
+
+## [1.3.1] - 2026-07-24
+
+### Security
+- The server URL is now strictly validated (new `url_policy.py`, covered
+  by unit tests): HTTPS is required for every non-loopback host, plain
+  HTTP is allowed only for `localhost`/`127.0.0.0/8`/`[::1]` development
+  targets, embedded credentials / query strings / fragments are rejected,
+  Unicode hostnames are IDNA-normalized, and bare hosts are upgraded to
+  `https://`. Previously any string was accepted after a trim, so a
+  mistyped or malicious URL could exfiltrate the bearer token and journal
+  stream over plain HTTP to an arbitrary host.
+- A stored `config.json` server URL is re-validated on every load;
+  invalid values disable telemetry until reconfigured.
+- The settings tab now always displays the exact destination host, with
+  an explicit warning when it is not the official server.
+- `config.json` is written with owner-only (0600) permissions where the
+  filesystem supports it.
+
 ## [1.3.0] - 2026-04-25
 
 ### Added

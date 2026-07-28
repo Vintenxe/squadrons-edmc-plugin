@@ -53,11 +53,25 @@ import urllib.request
 # EDMC's settings Notebook render incorrectly on some platforms.
 import myNotebook as nb  # type: ignore[import-not-found]
 
+# Server-URL validation lives in a sibling module with no EDMC imports so
+# it can be unit-tested standalone.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from url_policy import (  # noqa: E402
+    DEFAULT_SERVER_URL,
+    describe_destination,
+    normalize_server_url,
+)
+from telemetry_transport import build_telemetry_opener  # noqa: E402
+
+# Opener used for every telemetry send: refuses all redirects so the bearer
+# token can never be forwarded to a redirect target. See telemetry_transport.
+_TELEMETRY_OPENER = build_telemetry_opener()
+
 # EDMC plugin API requires these at module level
 this = sys.modules[__name__]
 this.plugin_name = "Squadrons Telemetry"
-this.version = "1.3.0"
-this.default_server_url = "https://elitesquadrons.com"
+this.version = "1.3.2"
+this.default_server_url = DEFAULT_SERVER_URL
 this.server_url = ""
 this.api_token = ""
 this.cmdr_name = ""
@@ -191,17 +205,65 @@ def plugin_prefs(parent: nb.Notebook, cmdr: str, is_beta: bool) -> nb.Frame:
         justify=tk.LEFT,
     ).grid(row=3, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
 
+    # Live destination read-back: the token and journal stream go to this
+    # host, so the resolved destination (or a rejection reason) is always
+    # visible right in the settings tab.
+    this._url_status_var = tk.StringVar(value=_destination_status(this.server_url))
+    nb.Label(
+        frame,
+        textvariable=this._url_status_var,
+        wraplength=400,
+        justify=tk.LEFT,
+    ).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+
     nb.Label(
         frame,
         text=f"Plugin version: {this.version}",
-    ).grid(row=4, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
+    ).grid(row=5, column=0, columnspan=2, sticky=tk.W, pady=(5, 0))
 
     return frame
 
 
+def _destination_status(url: str) -> str:
+    if not url:
+        return "No server configured — telemetry is not being sent."
+    host = describe_destination(url)
+    if url == this.default_server_url:
+        return f"Telemetry will be sent to: {host} (official server)"
+    return (
+        f"⚠ Telemetry (including your API token and journal data) will be "
+        f"sent to a NON-DEFAULT server: {host}. Only use a server you "
+        f"operate or fully trust."
+    )
+
+
 def prefs_changed(cmdr: str, is_beta: bool) -> None:
-    """Called by EDMC when settings are saved."""
-    this.server_url = this._url_var.get().strip().rstrip("/")
+    """Called by EDMC when settings are saved.
+
+    The server URL is security-critical (it receives the bearer token and
+    the journal stream), so it goes through the strict policy in
+    url_policy.py. A rejected value keeps the previous configuration.
+    """
+    normalized, error = normalize_server_url(this._url_var.get())
+    if error is not None:
+        this.logger.error(f"Rejected server URL: {error}")
+        if hasattr(this, "_url_status_var"):
+            this._url_status_var.set(f"✗ {error} Keeping previous server.")
+        # Restore the entry to the last-known-good value.
+        this._url_var.set(this.server_url or this.default_server_url)
+    else:
+        if normalized != this.server_url:
+            this.logger.info(f"Server URL set to {normalized}")
+            if normalized != this.default_server_url:
+                this.logger.warning(
+                    "Telemetry will be sent to a non-default server: "
+                    f"{describe_destination(normalized)}"
+                )
+        this.server_url = normalized
+        this._url_var.set(normalized)
+        if hasattr(this, "_url_status_var"):
+            this._url_status_var.set(_destination_status(normalized))
+
     this.api_token = this._token_var.get().strip()
     _save_config()
     this.logger.info(f"Settings updated: server={this.server_url}")
@@ -315,13 +377,37 @@ def _flush_buffer() -> None:
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
+        # _TELEMETRY_OPENER refuses every 3xx: the bearer token must never
+        # be forwarded to a redirect target (see _RefuseRedirects).
+        with _TELEMETRY_OPENER.open(req, timeout=15) as resp:
             result = json.loads(resp.read().decode("utf-8"))
             this.logger.debug(
                 f"Telemetry sent: {result.get('processed', 0)} processed, "
                 f"{result.get('skipped', 0)} skipped"
             )
     except urllib.error.HTTPError as e:
+        # 3xx: the configured server redirected the telemetry endpoint.
+        # This is a configuration/compromise signal, not a transient fault —
+        # retrying would just hit the redirect again, so the batch is
+        # dropped. The token was NOT sent to the redirect target. Log only
+        # the target hostname (never the full URL, token, or payload).
+        if 300 <= e.code < 400:
+            target_host = "unknown"
+            try:
+                from urllib.parse import urlsplit
+
+                location = e.headers.get("Location", "") if e.headers else ""
+                target_host = urlsplit(location).hostname or "unknown"
+            except Exception:
+                pass
+            this.logger.error(
+                f"Telemetry send failed and batch dropped: the configured "
+                f"server responded with a redirect (HTTP {e.code}) toward "
+                f"host '{target_host}'. Redirects are refused because the "
+                f"request carries your API token. Fix the Server URL in "
+                f"settings to the final canonical address."
+            )
+            return
         # 401 / 403: token is rejected or the client is no longer
         # authorized (revoked, disabled, or stripped of its squadron
         # membership). Do not keep retrying — drop this batch so we
@@ -389,25 +475,56 @@ def _config_path() -> str:
 
 
 def _load_config() -> None:
-    """Load config from disk."""
+    """Load config from disk.
+
+    The stored URL is re-validated on every load: a config file edited by
+    hand (or written by an older plugin version) must not smuggle in a
+    destination the current policy would reject.
+    """
     try:
         with open(_config_path(), "r") as f:
             config = json.load(f)
-            this.server_url = config.get("server_url", "")
+            stored_url = config.get("server_url", "")
             this.api_token = config.get("api_token", "")
     except (FileNotFoundError, json.JSONDecodeError):
         this.server_url = ""
         this.api_token = ""
+        return
+
+    if not stored_url:
+        this.server_url = ""
+        return
+    normalized, error = normalize_server_url(stored_url)
+    if error is not None:
+        this.logger.error(
+            f"Stored server URL rejected ({error}) — telemetry disabled "
+            "until a valid server is configured in settings."
+        )
+        this.server_url = ""
+    else:
+        this.server_url = normalized
+        if normalized != this.default_server_url:
+            this.logger.warning(
+                "Telemetry configured for a non-default server: "
+                f"{describe_destination(normalized)}"
+            )
 
 
 def _save_config() -> None:
-    """Persist config to disk."""
+    """Persist config to disk (owner-only permissions where supported —
+    the file contains the API token in plain text)."""
     try:
-        with open(_config_path(), "w") as f:
+        path = _config_path()
+        with open(path, "w") as f:
             json.dump(
                 {"server_url": this.server_url, "api_token": this.api_token},
                 f,
                 indent=2,
             )
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            # Best-effort — not meaningful on some Windows filesystems.
+            pass
     except OSError as e:
         this.logger.error(f"Failed to save config: {e}")
