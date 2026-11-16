@@ -6,6 +6,97 @@ this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-11-13
+
+### Fixed
+- **Market / Outfitting / Shipyard snapshots were never delivered.** The
+  plugin forwarded the bare journal line for these events, which carries
+  only station identity (`MarketID`, `StationName`, `StarSystem`) — the
+  inventory lives exclusively in the `Market.json` / `Outfitting.json` /
+  `Shipyard.json` sidecar files the game writes into the journal folder.
+  The server therefore counted every catalog event as `skipped` and the
+  Squadron Carrier commerce projection stayed empty. The plugin now reads
+  the sidecar file from EDMC's configured journal folder (the same files
+  EDMC's own EDDN integration reads) when the matching journal event
+  arrives, in a new EDMC-free module `catalog_snapshots.py`.
+
+### Added
+- Fail-closed snapshot validation. A file is forwarded only when its
+  `event`, `MarketID`, `StationName` and `StarSystem` match the journal
+  event and its `timestamp` is within 120 s of it. Missing, empty, partially
+  written, malformed, non-UTF-8, over-sized (> 4 MB) or stale files are
+  refused with a one-line reason in the EDMC log and nothing is sent — a
+  refused snapshot can neither erase nor fabricate inventory, because the
+  bare journal line is not sent either. A missing inventory array is never
+  treated as an empty inventory.
+- Normalisation to the server contract. Market `Items[]` are reduced to
+  `Name` (canonical symbol, e.g. `gold` — the language-neutral identity
+  EDDN uses; the localised name is NOT sent, so two commanders playing in
+  different languages produce one commodity identity), `BuyPrice`,
+  `SellPrice`, `Stock`, `Demand`, `MeanPrice`; Outfitting `Items[]` objects
+  become the canonical lower-case module list (`Modules: string[]`, free
+  `int_planetapproachsuite` excluded); Shipyard `PriceList[]` (also
+  `Pricelist` / `ShipyardList`) becomes `PriceList[{ShipType}]`. Nothing
+  else from the files (`id`, `Category`, `Rare`, `Consumer`/`Producer`,
+  `ShipPrice`, `Horizons`, …) leaves the machine.
+- Bounded sizes, never truncation: a snapshot over the server's per-array
+  caps (1024 commodities / 1024 modules / 128 ships) or over the 64 KB
+  per-event ceiling is refused whole with an explicit log line. Measured
+  realistic worst cases (every commodity in the game ≈ 55 KB, a
+  Jameson-scale outfitting board ≈ 33 KB) fit the existing contract.
+- Per-station chronology guard: an older snapshot for the same
+  (event, MarketID) is never forwarded after a newer one.
+- Both the journal event and the sidecar file must name the station and the
+  system (`StationName`, `StarSystem`) and agree; otherwise the snapshot is
+  refused (`missing_station_identity`).
+- Outfitting admission mirrors the EDDN outfitting/2 schema exactly
+  (`^hpt_` / `^int_` / `_armour_`, any case; `int_planetapproachsuite`
+  excluded): paintjobs, decals, bobbleheads, nameplates and ship kits that
+  the game lists on the same screen are omitted as EDDN requires, every
+  real module is kept, and a module entry without a usable name refuses the
+  whole snapshot.
+- The server's per-event outcome (`processed` / `skipped` / `errors`) is now
+  surfaced in the EDMC log at INFO/WARNING instead of DEBUG, so a snapshot
+  that the server declined is visible with its reason.
+
+### Changed
+- Flushes are split into server-compliant requests (≤ 50 events and
+  < 480 KB each). A backlog rebuffered after an outage is no longer sent
+  as one over-long request, and one large catalog event can never drag
+  unrelated carrier telemetry into a 413.
+- A transient failure (network error, 408, 429, 5xx) rebuffers the failed
+  batch *and* every batch not yet attempted, in order, then backs off as
+  before. A permanent rejection (3xx redirect, 401, 403, 413, 426 and any
+  other 4xx) drops only the offending batch; later batches are still sent.
+  Previously a 400 would be retried forever at the front of the capped
+  buffer and starve every newer event behind it.
+- A 400 for a multi-event batch no longer discards the whole batch: the
+  events are re-sent one at a time (bounded, in order) so only the event
+  the server cannot validate is dropped.
+- Flushes are serialised: the timer-driven flush, the immediate flush for
+  short-fused carrier events and the shutdown flush can no longer run
+  concurrently and deliver batches out of buffer order.
+
+### Privacy
+- The plugin now reads three additional local files: `Market.json`,
+  `Outfitting.json` and `Shipyard.json` in EDMC's journal folder, read-only,
+  only in response to the matching journal event, and only the fields
+  listed above are forwarded. See README → Privacy.
+
+### Compatibility
+- Requires the Elite-Squadrons backend released alongside this version
+  (Elite-Squadrons PR #395) to be deployed first. That backend applies a
+  forwarded snapshot as one atomic full replacement under the station row
+  lock, with per-category source precedence and observation chronology,
+  and refuses over-cap or normalised-empty snapshots; an older backend
+  accepts the same payload (`Items[]`, `Modules: string[]`,
+  `PriceList[]`) but applies it with its previous non-atomic,
+  receipt-time writers. Plugin 1.3.2 keeps working unchanged against the
+  new backend, so the backend is deployed before this plugin is published.
+- `config.json` (`server_url`, `api_token`) is unchanged; existing
+  credentials are preserved across the upgrade.
+- Requires EDMC 5.x on Python 3.9+ (standard library only, as before).
+
 ## [1.3.2] - 2026-07-25
 
 ### Security
@@ -19,11 +110,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never retried in a loop.
 
 ### Release note
-- The hardened plugin (1.3.1 URL policy + 1.3.2 redirect refusal) exists
-  in the main Elite-Squadrons repository only until a maintainer syncs
-  `edmc-plugin/` into the standalone `Vintenxe/squadrons-edmc-plugin`
-  repository and publishes a release. Until that release is published,
-  the publicly downloadable plugin does NOT contain these fixes.
+- Published as the standalone `Vintenxe/squadrons-edmc-plugin` v1.3.2
+  release on 2026-07-28 (the 1.3.1 URL policy and the 1.3.2 redirect
+  refusal together). Earlier notes stating that 1.3.1/1.3.2 remained
+  unpublished are superseded.
 
 ## [1.3.1] - 2026-07-24
 

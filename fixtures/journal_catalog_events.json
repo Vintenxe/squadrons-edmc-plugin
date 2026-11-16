@@ -1,0 +1,25 @@
+{
+  "Market": {
+    "timestamp": "2026-09-29T09:26:40Z",
+    "event": "Market",
+    "MarketID": 3716252928,
+    "StationName": "SPFO",
+    "StationType": "FleetCarrier",
+    "StarSystem": "Leesti",
+    "CarrierDockingAccess": "squadron"
+  },
+  "Outfitting": {
+    "timestamp": "2026-09-29T09:26:40Z",
+    "event": "Outfitting",
+    "MarketID": 3716252928,
+    "StationName": "SPFO",
+    "StarSystem": "Leesti"
+  },
+  "Shipyard": {
+    "timestamp": "2026-09-29T09:26:40Z",
+    "event": "Shipyard",
+    "MarketID": 3716252928,
+    "StationName": "SPFO",
+    "StarSystem": "Leesti"
+  }
+}

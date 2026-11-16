@@ -8,7 +8,13 @@ app and pastes it into the plugin settings.
 Supported events:
     - FSDJump, Location (BGS faction data)
     - Docked (station presence for market/outfitting/shipyard context)
-    - Market, Outfitting, Shipyard (full snapshots via EDMC)
+    - Market, Outfitting, Shipyard (full catalog snapshots).  The journal
+      line for these events carries only station identity; the inventory
+      is read from the ``Market.json`` / ``Outfitting.json`` /
+      ``Shipyard.json`` sidecar files in EDMC's configured journal folder
+      — the same files EDMC itself reads for EDDN — validated against the
+      journal event (MarketID, station, system, timestamp) and reduced to
+      the fields the server consumes.  See catalog_snapshots.py.
     - Full fleet-carrier lifecycle:
         CarrierJump, CarrierJumpRequest, CarrierJumpCancelled,
         CarrierLocation, CarrierStats, CarrierDepositFuel,
@@ -62,6 +68,10 @@ from url_policy import (  # noqa: E402
     normalize_server_url,
 )
 from telemetry_transport import build_telemetry_opener  # noqa: E402
+from catalog_snapshots import (  # noqa: E402
+    CatalogChronology,
+    load_catalog_snapshot,
+)
 
 # Opener used for every telemetry send: refuses all redirects so the bearer
 # token can never be forwarded to a redirect target. See telemetry_transport.
@@ -70,15 +80,23 @@ _TELEMETRY_OPENER = build_telemetry_opener()
 # EDMC plugin API requires these at module level
 this = sys.modules[__name__]
 this.plugin_name = "Squadrons Telemetry"
-this.version = "1.3.2"
+this.version = "1.4.0"
 this.default_server_url = DEFAULT_SERVER_URL
 this.server_url = ""
 this.api_token = ""
 this.cmdr_name = ""
 this.event_buffer: List[Dict[str, Any]] = []
 this.buffer_lock = threading.Lock()
+# Serialises flushes: the timer thread, an immediate flush and plugin_stop
+# may all call _flush_buffer; only one send sequence runs at a time so
+# batches reach the server in buffer order and a rebuffered backlog can
+# never interleave with a newer flush.
+this.flush_lock = threading.Lock()
 this.flush_timer: Optional[threading.Timer] = None
 this.logger = logging.getLogger(f"{this.plugin_name}")
+# Newest catalog snapshot forwarded per (event, MarketID): an older
+# observation (replayed journal, clock skew) never follows a newer one.
+this.catalog_chronology = CatalogChronology()
 
 # Events we forward to the server.
 BGS_EVENTS = {"FSDJump", "Location"}
@@ -143,6 +161,10 @@ IMMEDIATE_FLUSH_EVENTS = {
 # Buffer config
 BUFFER_FLUSH_INTERVAL = 10  # seconds
 BUFFER_MAX_SIZE = 30
+# Server contract: at most 50 events per request (telemetryPayloadSchema).
+# A flush that holds more (e.g. after a retry rebuffered a backlog) is sent
+# as several sequential requests, never as one over-long batch.
+MAX_BATCH_EVENTS = 50
 # Cap on locally buffered events across retries, to prevent unbounded
 # growth if the server is unreachable for a long time.
 BUFFER_RETRY_CAP = 100
@@ -290,6 +312,28 @@ def journal_entry(
 
     this.cmdr_name = cmdr or this.cmdr_name
 
+    if event in MARKET_EVENTS:
+        # The journal line has no inventory.  Read the sidecar snapshot EDMC
+        # itself watches, prove it belongs to this exact observation, and
+        # forward the normalised result — or forward nothing at all.  A
+        # refused snapshot never erases or fabricates inventory server-side
+        # because the bare journal line is not sent either.
+        snapshot = load_catalog_snapshot(entry, _journal_dir())
+        if not snapshot.ok:
+            this.logger.info(
+                f"{event} snapshot not forwarded ({snapshot.reason}): {snapshot.detail}"
+            )
+            return None
+        if not this.catalog_chronology.is_newer(snapshot.event):
+            this.logger.info(
+                f"{event} snapshot not forwarded (older_than_forwarded): a newer "
+                f"snapshot for MarketID {entry.get('MarketID')} was already sent"
+            )
+            return None
+        this.catalog_chronology.record(snapshot.event)
+        this.logger.debug(f"{event} snapshot loaded: {snapshot.detail}")
+        entry = snapshot.event
+
     with this.buffer_lock:
         this.event_buffer.append(entry)
 
@@ -344,17 +388,116 @@ def _cancel_flush_timer() -> None:
         this.flush_timer = None
 
 
+def _journal_dir() -> Optional[str]:
+    """EDMC's configured journal folder — the directory EDMC itself watches
+    and the one its EDDN integration reads Market.json & co. from.
+
+    Resolved the same way EDMC does (``journaldir`` setting, falling back to
+    the platform default) rather than guessing a Windows path.  Returns None
+    outside EDMC or when the setting is unavailable; catalog snapshots are
+    then refused with ``no_journal_dir`` and everything else keeps working.
+    """
+    try:
+        from config import config  # type: ignore[import-not-found]
+    except Exception:
+        return None
+    try:
+        configured = config.get_str("journaldir")
+        if not configured:
+            configured = config.default_journal_dir
+    except Exception:
+        return None
+    if not configured:
+        return None
+    return os.path.expanduser(str(configured))
+
+
+def _event_bytes(event: Dict[str, Any]) -> int:
+    try:
+        return len(json.dumps(event).encode("utf-8"))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _split_batches(events: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """Split a flush into server-compliant requests.
+
+    Each batch holds at most MAX_BATCH_EVENTS events and stays under
+    BUFFER_MAX_BYTES once serialised, so one large (but valid) catalog
+    snapshot can never drag unrelated carrier telemetry into a 413 — and a
+    backlog rebuffered after an outage is never sent as a single over-long
+    request the server would reject outright.
+    """
+    # Fixed envelope: {"cmdrName": "...", "events": [...]} plus separators.
+    overhead = len(json.dumps({"cmdrName": this.cmdr_name, "events": []}).encode("utf-8"))
+    batches: List[List[Dict[str, Any]]] = []
+    current: List[Dict[str, Any]] = []
+    current_bytes = overhead
+    for event in events:
+        size = _event_bytes(event) + 2  # ", " separator
+        if current and (
+            len(current) >= MAX_BATCH_EVENTS
+            or current_bytes + size >= BUFFER_MAX_BYTES
+        ):
+            batches.append(current)
+            current = []
+            current_bytes = overhead
+        current.append(event)
+        current_bytes += size
+    if current:
+        batches.append(current)
+    return batches
+
+
 def _flush_buffer() -> None:
-    """Send buffered events to the Squadrons API."""
-    with this.buffer_lock:
-        if not this.event_buffer:
+    """Send buffered events to the Squadrons API, one compliant batch at a
+    time.  A transient failure rebuffers the failed batch AND every batch
+    not yet attempted (order preserved) and backs off; a permanent
+    rejection drops only the offending batch and the remaining batches are
+    still sent.  Flushes are serialised (see this.flush_lock)."""
+    with this.flush_lock:
+        with this.buffer_lock:
+            if not this.event_buffer:
+                return
+            events = list(this.event_buffer)
+            this.event_buffer.clear()
+
+        if not this.server_url or not this.api_token or not this.cmdr_name:
             return
-        events = list(this.event_buffer)
-        this.event_buffer.clear()
 
-    if not this.server_url or not this.api_token or not this.cmdr_name:
-        return
+        batches = _split_batches(events)
+        for index, batch in enumerate(batches):
+            outcome = _send_batch(batch)
+            if outcome == "retry":
+                pending = [event for later in batches[index:] for event in later]
+                _rebuffer(pending)
+                _schedule_flush(delay_override=RETRY_BACKOFF_SECONDS)
+                return
+            if outcome == "rejected" and len(batch) > 1:
+                # The server refused the batch as a whole (400 validation
+                # failure).  One malformed event must not take the other
+                # events down with it: re-send them one at a time so only
+                # the offending event(s) are dropped.  Bounded: at most
+                # len(batch) extra requests, and a transient failure during
+                # the split still rebuffers the remainder in order.
+                for single_index, event in enumerate(batch):
+                    single = _send_batch([event])
+                    if single == "retry":
+                        pending = batch[single_index:] + [
+                            later_event for later in batches[index + 1:] for later_event in later
+                        ]
+                        _rebuffer(pending)
+                        _schedule_flush(delay_override=RETRY_BACKOFF_SECONDS)
+                        return
 
+
+def _send_batch(events: List[Dict[str, Any]]) -> str:
+    """POST one batch.
+
+    Returns "sent", "retry" (transient: rebuffer + back off), "rejected"
+    (the server refused this exact payload with 400 — the caller may split
+    it and re-send the events individually) or "dropped" (permanent for
+    this batch; nothing to retry)."""
     payload = {
         "cmdrName": this.cmdr_name,
         "events": events,
@@ -381,10 +524,8 @@ def _flush_buffer() -> None:
         # be forwarded to a redirect target (see _RefuseRedirects).
         with _TELEMETRY_OPENER.open(req, timeout=15) as resp:
             result = json.loads(resp.read().decode("utf-8"))
-            this.logger.debug(
-                f"Telemetry sent: {result.get('processed', 0)} processed, "
-                f"{result.get('skipped', 0)} skipped"
-            )
+            _log_server_outcome(result, len(events))
+            return "sent"
     except urllib.error.HTTPError as e:
         # 3xx: the configured server redirected the telemetry endpoint.
         # This is a configuration/compromise signal, not a transient fault —
@@ -407,14 +548,14 @@ def _flush_buffer() -> None:
                 f"request carries your API token. Fix the Server URL in "
                 f"settings to the final canonical address."
             )
-            return
+            return "dropped"
         # 401 / 403: token is rejected or the client is no longer
         # authorized (revoked, disabled, or stripped of its squadron
         # membership). Do not keep retrying — drop this batch so we
         # don't pin the buffer forever on a dead credential.
-        # 413: payload too large. The new byte-size tripwire above
-        # should prevent this in practice; if we still hit it, drop
-        # the batch rather than ship it again.
+        # 413: payload too large. Batches are split below the server's
+        # ceiling, so this should not happen; if it does, drop only this
+        # batch — the remaining batches are still sent.
         # 426: plugin version is below the server's minimum. Same
         # reasoning: retrying won't help until the user updates.
         if e.code in (401, 403, 413, 426):
@@ -442,22 +583,71 @@ def _flush_buffer() -> None:
             this.logger.error(
                 f"Telemetry send failed and batch dropped: {reason}"
             )
-            return
-        # 429 / 5xx and other HTTP errors: rebuffer and back off so a
-        # recovering server isn't hammered by an immediate re-flush timer.
+            return "dropped"
+        # 400: the server could not validate this exact payload.  Re-sending
+        # identical bytes cannot succeed, and a rebuffered batch at the FRONT
+        # of a capped buffer would starve every newer event behind it — but
+        # usually only ONE event in the batch is malformed, so the caller
+        # splits a multi-event batch and re-sends the events individually.
+        if e.code == 400:
+            if len(events) > 1:
+                this.logger.warning(
+                    f"Telemetry batch of {len(events)} events rejected by the "
+                    f"server (HTTP 400); re-sending the events individually so "
+                    f"only the malformed one is dropped."
+                )
+                return "rejected"
+            this.logger.error(
+                f"Telemetry send failed and event dropped: the server rejected "
+                f"a {events[0].get('event', '?')} event as invalid (HTTP 400)."
+            )
+            return "dropped"
+        # Other 4xx (404, 405, 415, …) are permanent for this batch and not
+        # event-specific.  408 and 429 are the transient exceptions and fall
+        # through to the retry path below.
+        if 400 <= e.code < 500 and e.code not in (408, 429):
+            this.logger.error(
+                f"Telemetry send failed and batch dropped: the server "
+                f"rejected the batch (HTTP {e.code}). Later batches are "
+                f"unaffected."
+            )
+            return "dropped"
+        # 408 / 429 / 5xx: rebuffer and back off so a recovering server
+        # isn't hammered by an immediate re-flush timer.
         this.logger.error(
             f"Telemetry send failed (HTTP {e.code}); will retry in "
             f"{RETRY_BACKOFF_SECONDS}s"
         )
-        _rebuffer(events)
-        _schedule_flush(delay_override=RETRY_BACKOFF_SECONDS)
+        return "retry"
     except Exception as e:
         this.logger.error(
             f"Telemetry send failed ({e}); will retry in "
             f"{RETRY_BACKOFF_SECONDS}s"
         )
-        _rebuffer(events)
-        _schedule_flush(delay_override=RETRY_BACKOFF_SECONDS)
+        return "retry"
+
+
+def _log_server_outcome(result: Any, sent: int) -> None:
+    """A 2xx is not the same as "everything landed": the server reports
+    per-event `processed` / `skipped` and a bounded `errors` list.  Surface
+    anything that was not processed so a user reading the EDMC log can see
+    why a snapshot did not appear, instead of a silent success."""
+    if not isinstance(result, dict):
+        this.logger.warning(f"Telemetry sent ({sent} events) but the server reply was not understood.")
+        return
+    processed = result.get("processed", 0)
+    skipped = result.get("skipped", 0)
+    errors = result.get("errors") or []
+    summary = f"Telemetry sent: {processed} processed, {skipped} skipped of {sent}"
+    if errors:
+        # Server-side messages are short diagnostics (event type, station,
+        # reason); they never contain the token or the payload.
+        shown = "; ".join(str(e) for e in errors[:5])
+        this.logger.warning(f"{summary}; server reported errors: {shown}")
+    elif skipped:
+        this.logger.info(summary)
+    else:
+        this.logger.debug(summary)
 
 
 def _rebuffer(events: List[Dict[str, Any]]) -> None:
