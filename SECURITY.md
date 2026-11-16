@@ -21,7 +21,9 @@ a fix and a disclosure timeline with you.
 
 In scope:
 
-- The plugin code in this repository (`squadrons_telemetry.py`).
+- The plugin code in this repository (`squadrons_telemetry.py`,
+  `catalog_snapshots.py`, `telemetry_transport.py`, `url_policy.py`,
+  `load.py`).
 - Any credential or data-handling defect introduced by this plugin
   specifically.
 
@@ -31,6 +33,17 @@ Out of scope (please report to the relevant project instead):
 - Issues in the Squadrons server API — report via the Squadrons web app's
   normal support channel.
 - Anonymous third-party data pipelines (EDDN, EDSM, Spansh, etc.).
+
+## Local files the plugin reads
+
+- `config.json` in the plugin folder (its own settings; see below).
+- Since 1.4.0: `Market.json`, `Outfitting.json` and `Shipyard.json` in
+  EDMC's configured journal folder — read-only, bounded to 4 MB, only in
+  response to the matching journal event, and only after the file's
+  `MarketID` / station / system / timestamp have been checked against that
+  event. Only the inventory fields documented in README → *Markets,
+  outfitting, shipyards* are forwarded. No other file in the journal
+  folder is read, and nothing is ever written there.
 
 ## Handling of secrets
 

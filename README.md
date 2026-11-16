@@ -32,12 +32,40 @@ events listed below.
   prices, modules for sale, and ships for sale at the station you're
   docked at. Listings are replaced on each visit, not appended.
 
-These snapshots are populated by EDMC from the `Market.json`,
-`Outfitting.json`, and `Shipyard.json` files that Elite Dangerous writes
-into its journal folder each time you dock. EDMC must be running at the
-moment you dock for those files to be picked up and forwarded. **No
-separate Frontier-account link in EDMC is required** for this plugin to
-send these events — the plugin reads what EDMC already sees.
+The journal line for these events carries only the station's identity.
+The inventory itself lives in the `Market.json`, `Outfitting.json` and
+`Shipyard.json` files that Elite Dangerous writes into its journal folder
+each time you open the corresponding station screen. Since plugin 1.4.0
+the plugin reads the matching file from **EDMC's configured journal
+folder** (the same files EDMC's own EDDN integration reads) when the
+journal event arrives, checks that it belongs to that exact observation
+(same `MarketID`, station, system and a timestamp within two minutes),
+reduces it to the fields the server uses, and forwards the result in the
+same batch as your other events. EDMC must be running at the moment you
+open the market / outfitting / shipyard screen. **No separate
+Frontier-account link in EDMC is required.**
+
+What is forwarded from those files:
+
+| File | Forwarded | Dropped locally |
+| ---- | --------- | --------------- |
+| `Market.json` | per commodity: canonical symbol (`gold`), buy/sell/mean price, stock, demand | `id`, localised name (language-dependent; identity is the symbol), category, `Rare`, `Consumer`/`Producer` flags, brackets |
+| `Outfitting.json` | canonical lower-case module names (e.g. `int_shieldgenerator_size3_class5`) — every entry matching the EDDN outfitting pattern (`hpt_*`, `int_*`, `*_armour_*`) | `id`, `BuyPrice`, `Horizons`, the free `int_planetapproachsuite`, and non-module items the game lists on the same screen (paintjobs, decals, bobbleheads, nameplates, ship kits) |
+| `Shipyard.json` | canonical ship identifiers (e.g. `krait_mkii`) | `id`, `ShipPrice`, `Horizons`, `AllowCobraMkIV` |
+
+A snapshot is **not** forwarded — and the EDMC log says why — when the file
+is missing, empty, still being written, malformed, more than two minutes
+away from the journal event's timestamp, for a different station or
+system, missing the station or system name on either side, larger than
+4 MB, over the server's per-list caps (1024 commodities / 1024 modules /
+128 ships) or over the 64 KB per-event limit. (The two-minute window exists
+because the game writes the file and the journal line in the same moment —
+their timestamps normally agree to the second — while a file left from an
+earlier visit to the same station is hours apart; two minutes tolerates
+any clock or write-ordering jitter without admitting a stale file.) Nothing partial is ever sent: a refused snapshot
+cannot erase or invent inventory on the server. A genuinely empty list is
+also not forwarded (the server cannot represent "known empty" yet; see
+Limitations).
 
 ### Fleet carriers (full lifecycle)
 - `CarrierJump`, `CarrierJumpRequest`, `CarrierJumpCancelled`,
@@ -74,6 +102,9 @@ zone tracking, or operation auto-tagging. Those are not part of v1.x.
   <https://elitesquadrons.com>) with permission to generate telemetry
   tokens.
 - Python standard library only — no extra packages to install.
+- EDMC's **E:D journal file location** setting must point at the folder
+  the game writes to (it does by default); the plugin reads
+  `Market.json` / `Outfitting.json` / `Shipyard.json` from that folder.
 
 ---
 
@@ -118,7 +149,9 @@ directory. There is no installer.
 Delete the old `SquadronsTelemetry` folder, drop the new one in its place,
 and restart EDMC. Your server URL and API token are stored inside the
 plugin folder in `config.json`; if you want to keep them across updates,
-copy that file into the new folder before restarting.
+copy that file into the new folder before restarting. The `config.json`
+format has not changed since 1.1 — a file written by any earlier 1.x
+release is read as-is by 1.4.0.
 
 ---
 
@@ -149,10 +182,13 @@ Tokens have the format `sq_<48 hex chars>`.
 4. Click **OK** to save.
 
 The plugin batches events for up to 10 seconds (or 30 events) before
-sending. On a send failure, unsent events are buffered locally (capped at
-100) and retried on the next flush. Short-fused carrier events
-(`CarrierJumpRequest`, `CarrierJumpCancelled`, `CarrierJump`) skip the
-buffer window and are flushed immediately.
+sending, in requests of at most 50 events / 480 KB each. On a transient
+send failure (network error, HTTP 408/429/5xx) unsent events are buffered
+locally (capped at 100), in order, and retried after a 30-second back-off.
+A permanent rejection (redirect, 401, 403, 413, 426 or any other 4xx)
+drops only that batch and logs the reason; later batches are unaffected.
+Short-fused carrier events (`CarrierJumpRequest`, `CarrierJumpCancelled`,
+`CarrierJump`) skip the buffer window and are flushed immediately.
 
 ### Verify it's working
 
@@ -210,6 +246,19 @@ Precedence is set by the server and is not configurable per client.
   latest release from the
   [Releases page](https://github.com/Vintenxe/squadrons-edmc-plugin/releases).
 
+**Market / Outfitting / Shipyard never show up for a station**
+- Look for `Market snapshot not forwarded (<reason>)` lines in the EDMC
+  log. `file_missing` means EDMC's journal folder setting does not point
+  at the folder the game writes to (EDMC → Settings → Configuration →
+  E:D journal file location); `stale_snapshot` means the game did not
+  rewrite the file for this visit — open the station screen again;
+  `marketid_mismatch` / `station_mismatch` mean the file on disk belongs
+  to a different station and was correctly refused; `event_too_large` /
+  `too_many_items` mean the catalog exceeds the server's bounds and was
+  refused whole rather than truncated.
+- The snapshot is written when you open the commodities market,
+  outfitting or shipyard screen, not merely when you dock.
+
 **`429 Rate limit exceeded`**
 - Default is 60 requests/minute per client. Each batch is one request,
   so you should never hit this in normal play.
@@ -241,7 +290,15 @@ asks you to upgrade when that happens.
 
 - The plugin only sends the journal events listed above. It does not
   read your save game, your Frontier login, your friends list, or
-  anything outside the EDMC journal stream.
+  anything outside the EDMC journal stream and the three catalog files
+  below.
+- Since 1.4.0 the plugin reads three additional local files, read-only
+  and only in response to the matching journal event: `Market.json`,
+  `Outfitting.json` and `Shipyard.json` in EDMC's configured journal
+  folder. Only the inventory fields listed under *Markets, outfitting,
+  shipyards* are forwarded; the rest of each file is dropped locally and
+  the files are never modified, copied or uploaded as a whole. No other
+  file in the journal folder is read.
 - Events are scoped to your squadron via your authenticated token.
   Other squadrons cannot see your data.
 - Tokens are stored hashed (SHA-256) on the server. Only the prefix is
@@ -257,6 +314,30 @@ asks you to upgrade when that happens.
 - You can revoke a token at any time from the Squadrons web app.
 
 See [SECURITY.md](SECURITY.md) if you need to report a security issue.
+
+---
+
+## Limitations
+
+- A genuinely empty market / outfitting / shipyard (the file lists no
+  entries) is not forwarded. The server's full-replacement write ignores
+  empty lists rather than clearing previously observed rows, so a station
+  that *stopped* selling everything keeps its last observed inventory
+  until a newer non-empty snapshot or a higher-precedence source replaces
+  it. The freshness note on the Squadrons page shows when the inventory
+  was last observed.
+- Catalogs above the server's bounds (1024 commodities, 1024 modules, 128
+  ships, 64 KB per event) are refused whole. No Squadron Carrier can reach
+  these bounds; a few of the largest shipyard stations can exceed the
+  module cap, and their outfitting is then simply not forwarded.
+- A sidecar file that is still being written when the journal event
+  arrives is refused and not re-read; the next time you open that station
+  screen a fresh file and a fresh journal event are produced.
+- The server applies a snapshot only if nothing fresher or more
+  authoritative is already projected for that station and category
+  (another member's newer snapshot, or a Frontier cAPI import less than
+  24 hours old). Such a snapshot is counted as *skipped* on the server and
+  is not an error; the EDMC log shows the server's summary.
 
 ---
 

@@ -1,0 +1,56 @@
+{
+  "timestamp": "2026-09-29T09:26:40Z",
+  "event": "Shipyard",
+  "MarketID": 3716252928,
+  "StationName": "SPFO",
+  "StarSystem": "Leesti",
+  "Horizons": true,
+  "AllowCobraMkIV": false,
+  "PriceList": [
+    {
+      "id": 128049249,
+      "ShipType": "sidewinder",
+      "ShipPrice": 32000
+    },
+    {
+      "id": 128049255,
+      "ShipType": "eagle",
+      "ShipPrice": 44800
+    },
+    {
+      "id": 128049261,
+      "ShipType": "hauler",
+      "ShipPrice": 52720
+    },
+    {
+      "id": 128049279,
+      "ShipType": "cobramkiii",
+      "ShipType_Localised": "Cobra Mk III",
+      "ShipPrice": 349718
+    },
+    {
+      "id": 128049285,
+      "ShipType": "viper",
+      "ShipType_Localised": "Viper Mk III",
+      "ShipPrice": 142931
+    },
+    {
+      "id": 128049321,
+      "ShipType": "asp",
+      "ShipType_Localised": "Asp Explorer",
+      "ShipPrice": 6661153
+    },
+    {
+      "id": 128672269,
+      "ShipType": "krait_mkii",
+      "ShipType_Localised": "Krait Mk II",
+      "ShipPrice": 45814205
+    },
+    {
+      "id": 128049339,
+      "ShipType": "type9",
+      "ShipType_Localised": "Type-9 Heavy",
+      "ShipPrice": 76555842
+    }
+  ]
+}

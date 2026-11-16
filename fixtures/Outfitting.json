@@ -1,0 +1,150 @@
+{
+  "timestamp": "2026-09-29T09:26:40Z",
+  "event": "Outfitting",
+  "MarketID": 3716252928,
+  "StationName": "SPFO",
+  "StarSystem": "Leesti",
+  "Horizons": true,
+  "Items": [
+    {
+      "id": 128049512,
+      "Name": "int_planetapproachsuite",
+      "BuyPrice": 500
+    },
+    {
+      "id": 128049381,
+      "Name": "hpt_pulselaser_fixed_small",
+      "BuyPrice": 2200
+    },
+    {
+      "id": 128049382,
+      "Name": "hpt_pulselaser_gimbal_small",
+      "BuyPrice": 6600
+    },
+    {
+      "id": 128049385,
+      "Name": "hpt_pulselaser_fixed_medium",
+      "BuyPrice": 17600
+    },
+    {
+      "id": 128049400,
+      "Name": "hpt_beamlaser_fixed_small",
+      "BuyPrice": 37430
+    },
+    {
+      "id": 128049429,
+      "Name": "hpt_multicannon_fixed_small",
+      "BuyPrice": 9500
+    },
+    {
+      "id": 128049430,
+      "Name": "hpt_multicannon_gimbal_small",
+      "BuyPrice": 14250
+    },
+    {
+      "id": 128049545,
+      "Name": "int_shieldgenerator_size3_class5",
+      "BuyPrice": 507912
+    },
+    {
+      "id": 128049546,
+      "Name": "int_shieldgenerator_size4_class5",
+      "BuyPrice": 1583760
+    },
+    {
+      "id": 128049529,
+      "Name": "int_powerplant_size4_class5",
+      "BuyPrice": 1610080
+    },
+    {
+      "id": 128049561,
+      "Name": "int_engine_size4_class5",
+      "BuyPrice": 1610080
+    },
+    {
+      "id": 128049572,
+      "Name": "int_hyperdrive_size4_class5",
+      "BuyPrice": 1610080
+    },
+    {
+      "id": 128049591,
+      "Name": "int_lifesupport_size2_class4",
+      "BuyPrice": 28373
+    },
+    {
+      "id": 128049601,
+      "Name": "int_powerdistributor_size4_class5",
+      "BuyPrice": 507912
+    },
+    {
+      "id": 128049611,
+      "Name": "int_sensors_size4_class3",
+      "BuyPrice": 28373
+    },
+    {
+      "id": 128049634,
+      "Name": "int_fueltank_size4_class3",
+      "BuyPrice": 24734
+    },
+    {
+      "id": 128049671,
+      "Name": "int_cargorack_size4_class1",
+      "BuyPrice": 34328
+    },
+    {
+      "id": 128049690,
+      "Name": "int_fuelscoop_size4_class5",
+      "BuyPrice": 2433010
+    },
+    {
+      "id": 128049498,
+      "Name": "cobramkiii_armour_grade1",
+      "BuyPrice": 0
+    },
+    {
+      "id": 128049499,
+      "Name": "cobramkiii_armour_grade2",
+      "BuyPrice": 139010
+    },
+    {
+      "id": 128049502,
+      "Name": "cobramkiii_armour_mirrored",
+      "BuyPrice": 1050000
+    },
+    {
+      "id": 128066532,
+      "Name": "int_guardianfsdbooster_size3",
+      "BuyPrice": 3072000
+    },
+    {
+      "id": 128064338,
+      "Name": "int_detailedsurfacescanner_tiny",
+      "BuyPrice": 250000
+    },
+    {
+      "id": 128667728,
+      "Name": "paintjob_cobramkiii_default_52",
+      "BuyPrice": 0
+    },
+    {
+      "id": 128671140,
+      "Name": "decal_combat_elite",
+      "BuyPrice": 0
+    },
+    {
+      "id": 128671160,
+      "Name": "bobble_station_coriolis",
+      "BuyPrice": 0
+    },
+    {
+      "id": 128727950,
+      "Name": "nameplate_combat01_white",
+      "BuyPrice": 0
+    },
+    {
+      "id": 128731760,
+      "Name": "cobramkiii_shipkit1_bumper1",
+      "BuyPrice": 0
+    }
+  ]
+}
